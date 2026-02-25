@@ -14,13 +14,29 @@ Successfully implemented a complete system for incrementally updating static web
 4. **page_generator.py** - Static HTML generator using Jinja2 templates
 5. **s3_uploader.py** - AWS S3 uploader for publishing static content
 6. **main.py** - Main orchestrator that ties all components together
-7. **example.py** - Comprehensive examples demonstrating the system
-8. **requirements.txt** - Python dependencies
-9. **README.md** - Complete documentation
+7. **webhook_receiver.py** - Flask-based webhook receiver for real-time Drupal notifications
+8. **test_webhook.py** - Test suite for webhook integration
+9. **example.py** - Comprehensive examples demonstrating the system
+10. **requirements.txt** - Python dependencies (includes Flask, Gunicorn)
+11. **README.md** - Complete documentation
+12. **WEBHOOK_SETUP.md** - Complete webhook integration guide
+13. **drupal-webhook.service** - Systemd service file for production deployment
+14. **.env.example** - Environment variable template
 
 ### Key Features Implemented
 
-#### 1. Content Change Detection
+#### 1. Real-time Webhook Integration
+
+- **Flask-based webhook receiver** accepts POST notifications from Drupal
+- **HMAC signature validation** ensures webhook authenticity
+- **Instant content processing** when Drupal content changes
+- **Multiple deployment options**: Development server, Gunicorn, Docker, systemd
+- **Health check endpoint** for monitoring
+- **Manual sync trigger** for on-demand regeneration
+- **Event support**: create, update, delete events
+- **Production-ready** with logging, error handling, and security
+
+#### 2. Content Change Detection
 
 - Queries Drupal JSON:API for content modified since a specific time
 - Supports all required content types: pages, facilities, personnel, procedures, regions, menus
@@ -117,13 +133,27 @@ python main.py
 
 ### Next Steps for Production
 
+**Option 1: Real-time Webhooks (Recommended)**
+
 1. Configure Drupal API endpoint in config.py
 2. Set up AWS S3 bucket and credentials
-3. Create custom Jinja2 templates (optional)
-4. Set up automated scheduling:
+3. Set up webhook integration:
+   - Install Drupal Webhooks module
+   - Configure webhook endpoint and secret
+   - Deploy webhook receiver (see WEBHOOK_SETUP.md)
+   - Test with test_webhook.py
+4. Create custom Jinja2 templates (optional)
+5. Add monitoring and alerting
+6. Implement CloudFront cache invalidation
+
+**Option 2: Scheduled Polling**
+
+1. Configure Drupal API endpoint in config.py
+2. Set up AWS S3 bucket and credentials
+3. Set up automated scheduling:
    - Cron job for periodic checks
    - AWS Lambda + EventBridge
-   - Drupal webhook integration
+4. Create custom Jinja2 templates (optional)
 5. Add monitoring and alerting
 6. Implement CloudFront cache invalidation
 
@@ -135,6 +165,7 @@ python main.py
 ✓ **Scalable**: Handles growing content without performance degradation
 ✓ **Maintainable**: Modern Python code with clear architecture
 ✓ **Flexible**: Easy to extend with new content types
+✓ **Real-time Updates**: Webhook integration for instant publishing
 
 ### Code Quality
 

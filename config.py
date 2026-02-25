@@ -22,3 +22,8 @@ CONTENT_TYPES = {
 
 # Change tracking database (SQLite for simplicity)
 CHANGE_TRACKING_DB = "content_changes.db"
+
+# Webhook Configuration
+WEBHOOK_SECRET = os.getenv("DRUPAL_WEBHOOK_SECRET", "")
+WEBHOOK_PORT = int(os.getenv("WEBHOOK_PORT", "5000"))
+WEBHOOK_ENABLED = os.getenv("WEBHOOK_ENABLED", "true").lower() == "true"

@@ -24,30 +24,36 @@ This reduces update time from hours to seconds while maintaining the same Drupal
 
 ### Components
 
-1. **DrupalClient** (`drupal_client.py`)
+1. **WebhookReceiver** (`webhook_receiver.py`) **[NEW]**
+   - Flask-based REST API for real-time Drupal notifications
+   - HMAC signature validation for security
+   - Instant processing of content create/update/delete events
+   - Health monitoring and manual sync endpoints
+
+2. **DrupalClient** (`drupal_client.py`)
    - Queries Drupal JSON:API for content changes
    - Detects which content items have been modified
    - Retrieves specific content by ID
    - Fetches menu structures
 
-2. **DependencyMapper** (`dependency_mapper.py`)
+3. **DependencyMapper** (`dependency_mapper.py`)
    - Tracks which static pages depend on which Drupal content
    - Maps content changes to affected pages
    - Uses SQLite database for persistent tracking
    - Maintains processing state (what's been updated)
 
-3. **PageGenerator** (`page_generator.py`)
+4. **PageGenerator** (`page_generator.py`)
    - Generates static HTML from Drupal content
    - Uses Jinja2 templates for different content types
    - Supports pages, facilities, personnel, and procedures
    - Includes menu in generated pages
 
-4. **S3Uploader** (`s3_uploader.py`)
+5. **S3Uploader** (`s3_uploader.py`)
    - Uploads generated HTML to AWS S3
    - Manages public access and cache headers
    - Provides file management operations
 
-5. **StaticSiteUpdater** (`main.py`)
+6. **StaticSiteUpdater** (`main.py`)
    - Orchestrates the entire update process
    - Checks for content changes
    - Determines affected pages
@@ -55,10 +61,34 @@ This reduces update time from hours to seconds while maintaining the same Drupal
 
 ### Data Flow
 
+**With Webhooks (Recommended):**
+
 ```
-Drupal Content Change
+Drupal Content Change (user clicks Save)
         ↓
-DrupalClient detects change
+Drupal sends webhook notification
+        ↓
+WebhookReceiver validates & processes
+        ↓
+DrupalClient fetches content details
+        ↓
+DependencyMapper identifies affected pages
+        ↓
+PageGenerator creates HTML for each page
+        ↓
+S3Uploader publishes to AWS S3
+        ↓
+DependencyMapper marks change as processed
+        ↓
+Update live in seconds!
+```
+
+**With Polling (Alternative):**
+
+```
+Cron/Scheduler triggers check
+        ↓
+DrupalClient queries for changes
         ↓
 DependencyMapper identifies affected pages
         ↓
@@ -69,43 +99,147 @@ S3Uploader publishes to AWS S3
 DependencyMapper marks change as processed
 ```
 
-## Installation
+## 🚀 Quick Start
+
+### Prerequisites
+
+- Python 3.8+
+- Access to Drupal site with JSON:API enabled
+- AWS S3 bucket (optional for testing)
+- Drupal Webhooks module installed (for real-time updates)
+
+### Installation
 
 ```bash
+# Clone repository
+cd drupal-static-cms
+
 # Create virtual environment
 python -m venv venv
 source venv/bin/activate  # On Windows: venv\Scripts\activate
 
 # Install dependencies
 pip install -r requirements.txt
+
+# Copy environment template
+cp .env.example .env
+# Edit .env with your settings
 ```
+
+### Choose Your Deployment Mode
+
+#### Option 1: Real-time Webhooks (Recommended for Production)
+
+**Best for:** Production sites, instant updates, high-traffic scenarios
+
+```bash
+# Set webhook secret
+export DRUPAL_WEBHOOK_SECRET=$(python -c "import secrets; print(secrets.token_urlsafe(32))")
+
+# Run webhook receiver
+python webhook_receiver.py
+# Or for production:
+gunicorn webhook_receiver:app --bind 0.0.0.0:5000 --workers 4
+```
+
+**👉 Complete setup guide: [WEBHOOK_SETUP.md](WEBHOOK_SETUP.md)**
+
+✅ **Pros:**
+
+- Instant updates (2-5 seconds after publishing)
+- No polling overhead on Drupal API
+- Lower resource costs
+- Production-ready with Gunicorn
+- Scalable for high-traffic sites
+
+#### Option 2: Scheduled Polling (Alternative)
+
+**Best for:** Development, testing, simple deployments
+
+```bash
+# Run once
+python main.py
+
+# Or schedule with cron (every 5 minutes)
+*/5 * * * * cd /path/to/drupal-static-cms && /path/to/venv/bin/python main.py
+```
+
+✅ **Pros:**
+
+- Simpler initial setup
+- No webhook module required
+- Good for testing and development
+- Works as fallback
+
+**Comparison:**
+
+| Feature                | Webhooks    | Polling      |
+| ---------------------- | ----------- | ------------ |
+| Update Speed           | 2-5 seconds | 5-15 minutes |
+| Resource Usage         | Low         | Medium       |
+| Setup Complexity       | Medium      | Low          |
+| Drupal Module Required | Yes         | No           |
+| Recommended For        | Production  | Development  |
 
 ## Configuration
 
-Edit `config.py` or set environment variables:
+### Environment Variables
 
-```python
-# Drupal Configuration
-DRUPAL_BASE_URL = 'https://your-drupal-site.com'
-
-# AWS S3 Configuration
-S3_BUCKET_NAME = 'your-bucket-name'
-S3_REGION = 'us-east-1'
-```
-
-Environment variables:
+Copy `.env.example` to `.env` and configure:
 
 ```bash
-export DRUPAL_BASE_URL=https://your-drupal-site.com
-export S3_BUCKET_NAME=your-bucket-name
-export S3_REGION=us-east-1
+# Drupal Configuration
+DRUPAL_BASE_URL=https://your-drupal-site.com
+DRUPAL_API_USER=api_user           # Optional, if API requires auth
+DRUPAL_API_PASSWORD=api_password   # Optional
+
+# AWS S3 Configuration
+S3_BUCKET_NAME=your-bucket-name
+S3_REGION=us-east-1
+AWS_ACCESS_KEY_ID=your-key
+AWS_SECRET_ACCESS_KEY=your-secret
+
+# Webhook Configuration (for webhook mode)
+DRUPAL_WEBHOOK_SECRET=your-secure-secret-key
+WEBHOOK_PORT=5000
+WEBHOOK_ENABLED=true
 ```
+
+### Generate Webhook Secret
+
+```bash
+python -c "import secrets; print(secrets.token_urlsafe(32))"
+```
+
+Use the same secret in both your `.env` file and Drupal webhook configuration.
 
 ## Usage
 
-### Basic Usage
+### Running with Webhooks
 
-Run the demonstration:
+1. **Start the webhook receiver:**
+
+```bash
+# Development
+python webhook_receiver.py
+
+# Production
+gunicorn webhook_receiver:app --bind 0.0.0.0:5000 --workers 4 --timeout 120
+```
+
+2. **Test the webhook:**
+
+```bash
+python test_webhook.py
+```
+
+3. **Configure Drupal** (see [WEBHOOK_SETUP.md](WEBHOOK_SETUP.md))
+
+4. **Edit content in Drupal** - changes will be processed automatically!
+
+### Running with Polling
+
+Run the main script manually or via cron:
 
 ```bash
 python main.py
@@ -113,9 +247,10 @@ python main.py
 
 This will:
 
-1. Check for content changes in the last hour
+1. Check for content changes since last run
 2. Process any unprocessed content
-3. Display examples of how different update scenarios work
+3. Generate and upload affected pages
+4. Display statistics
 
 ### Check for Changes Since Specific Time
 
@@ -296,30 +431,120 @@ Takes: minutes instead of hours
 - Lower AWS costs (minimal S3 operations)
 - Near-instant publication
 
-## Scheduling
+## Production Deployment
 
-Set up automated checks using cron or similar:
+### Webhook Receiver (Recommended)
+
+**Using Systemd:**
+
+1. Copy and edit the service file:
 
 ```bash
-# Check for changes every 5 minutes
-*/5 * * * * cd /path/to/drupal-static-cms && /path/to/venv/bin/python main.py
-
-# Or use a more sophisticated scheduler
+sudo cp drupal-webhook.service /etc/systemd/system/
+sudo nano /etc/systemd/system/drupal-webhook.service
+# Update paths and user
 ```
 
-For production, consider:
+2. Enable and start:
 
-- AWS Lambda triggered by EventBridge (scheduled)
-- Drupal webhook calling your service
-- Continuous polling service
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable drupal-webhook
+sudo systemctl start drupal-webhook
+sudo systemctl status drupal-webhook
+```
 
-## Testing Without Drupal/S3
+**Using Docker:**
+
+```bash
+# Build image
+docker build -f Dockerfile.webhook -t drupal-webhook .
+
+# Run container
+docker run -d -p 5000:5000 --env-file .env --name drupal-webhook drupal-webhook
+```
+
+**With Nginx Reverse Proxy:**
+
+```nginx
+server {
+    listen 80;
+    server_name webhooks.yoursite.com;
+
+    location / {
+        proxy_pass http://localhost:5000;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    }
+}
+```
+
+See [WEBHOOK_SETUP.md](WEBHOOK_SETUP.md) for complete production deployment guide.
+
+### Scheduled Polling (Alternative)
+
+**Cron Job:**
+
+```bash
+# Edit crontab
+crontab -e
+
+# Add line for every 5 minutes
+*/5 * * * * cd /path/to/drupal-static-cms && /path/to/venv/bin/python main.py >> /var/log/drupal-static-cms.log 2>&1
+```
+
+**AWS Lambda:**
+
+- Package the code with dependencies
+- Create Lambda function
+- Trigger with EventBridge on a schedule
+- Set appropriate timeout (5-15 minutes)
+
+**Kubernetes CronJob:**
+
+```yaml
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: drupal-static-updater
+spec:
+  schedule: '*/5 * * * *'
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          containers:
+            - name: updater
+              image: drupal-static-cms:latest
+              command: ['python', 'main.py']
+```
+
+## Testing
+
+### Test Webhook Integration
+
+```bash
+# Run automated tests
+python test_webhook.py
+
+# Check webhook health
+curl http://localhost:5000/webhook/health
+
+# Trigger manual sync
+curl -X POST http://localhost:5000/webhook/trigger-full-sync \
+  -H "Content-Type: application/json" \
+  -d '{}'
+```
+
+### Test Without Drupal/S3
 
 The code includes safety checks:
 
 - If S3 client can't initialize, it logs what would be uploaded without failing
-- You can run the demonstration to see how the system works
-- The components are independent and can be tested separately
+- You can run examples to see how the system works: `python example.py`
+- Components are independent and can be tested separately
+- Mock data can be used for development
 
 ## Extending the System
 
@@ -373,13 +598,54 @@ For high-volume sites:
 
 ## Monitoring
 
-Track these metrics:
+### Webhook Receiver Monitoring
+
+**Health Check Endpoint:**
+
+```bash
+curl http://localhost:5000/webhook/health
+```
+
+**Log Monitoring:**
+
+```bash
+# Systemd logs
+sudo journalctl -u drupal-webhook -f
+
+# Application logs show:
+# - Incoming webhook requests
+# - Signature validation results
+# - Content processing status
+# - Errors and warnings
+```
+
+### Key Metrics to Track
+
+**Webhook Mode:**
+
+- Webhook requests received per hour
+- Webhook processing time (should be <5 seconds)
+- Failed signature validations
+- Processing errors
+- S3 upload success rate
+
+**Polling Mode:**
 
 - Number of content changes per hour
 - Average pages affected per change
 - Generation time per page
 - S3 upload success rate
 - Time from Drupal update to S3 publication
+
+### Alerting
+
+Set up alerts for:
+
+- Webhook receiver downtime
+- Failed webhook signatures (possible security issue)
+- S3 upload failures
+- Processing errors
+- High processing times
 
 ## License
 

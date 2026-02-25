@@ -1,0 +1,24 @@
+[Unit]
+Description=Drupal Static CMS Webhook Receiver
+After=network.target
+
+[Service]
+Type=notify
+User=www-data
+Group=www-data
+WorkingDirectory=/path/to/drupal-static-cms
+Environment="PATH=/path/to/drupal-static-cms/venv/bin"
+EnvironmentFile=/path/to/drupal-static-cms/.env
+
+ExecStart=/path/to/drupal-static-cms/venv/bin/gunicorn webhook_receiver:app \
+  --bind 0.0.0.0:5000 \
+  --workers 4 \
+  --timeout 120 \
+  --access-logfile /var/log/drupal-webhook/access.log \
+  --error-logfile /var/log/drupal-webhook/error.log
+
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
